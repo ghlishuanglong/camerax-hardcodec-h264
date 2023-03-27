@@ -2,11 +2,14 @@ package com.camerax.hardcodec.h264
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.SurfaceTexture
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -22,22 +25,56 @@ import com.google.common.util.concurrent.ListenableFuture
 
 class MainActivity : AppCompatActivity(), View.OnClickListener {
 
-    private lateinit var viewBinding: ActivityMainBinding
-    private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
+    private lateinit var mViewBinding: ActivityMainBinding
+    private lateinit var mCameraProviderFuture: ListenableFuture<ProcessCameraProvider>
     private var isStartCodec = false
+    private lateinit var mHardEncodeUtils: HardEncodeUtils
+    private lateinit var mSurface: Surface
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        viewBinding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(viewBinding.root)
+        mViewBinding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(mViewBinding.root)
 
         //Check and request permissions
         if (allPermissionsGranted()) {
             startCamera()
-            viewBinding.mBtnStartCodec.setOnClickListener(this)
-            viewBinding.mBtnStopCodec.setOnClickListener(this)
+            mViewBinding.mBtnStartCodec.setOnClickListener(this)
+            mViewBinding.mBtnStopCodec.setOnClickListener(this)
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+        }
+
+        mViewBinding.mTextureView.surfaceTextureListener = object :
+            TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(
+                surfaceTexture: SurfaceTexture,
+                width: Int,
+                height: Int
+            ) {
+                mSurface = Surface(surfaceTexture)
+                mHardEncodeUtils = HardEncodeUtils()
+                mHardEncodeUtils.init(mSurface)
+            }
+
+            override fun onSurfaceTextureSizeChanged(
+                surface: SurfaceTexture,
+                width: Int,
+                height: Int
+            ) {
+
+            }
+
+            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                mSurface.release()
+                surface.release()
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+
+            }
+
         }
     }
 
@@ -45,6 +82,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         when (v!!.id) {
             R.id.mBtnStartCodec -> {//Start Codec
                 isStartCodec = true
+                mHardEncodeUtils.startRun()
             }
             R.id.mBtnStopCodec -> {//Stop Codec
                 isStartCodec = false
@@ -57,11 +95,11 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
     }
 
     private fun startCamera() {
-        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        mCameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
-        cameraProviderFuture.addListener({
+        mCameraProviderFuture.addListener({
 
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+            val cameraProvider: ProcessCameraProvider = mCameraProviderFuture.get()
 
             //Use the rear camera by default
             val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
@@ -82,14 +120,14 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
     private fun preview(): Preview {
         //Set preview related parameters
         val preview = Preview.Builder().build()
-        preview.setSurfaceProvider(viewBinding.mPreviewView.surfaceProvider)
+        preview.setSurfaceProvider(mViewBinding.mPreviewView.surfaceProvider)
         return preview
     }
 
     private fun imageAnalysis(): ImageAnalysis {
 
         val nV21ToBitmap = NV21ToBitmap(this)
-        val hardEncodeUtils = HardEncodeUtils()
+
 
         //Set image analysis
         val imageAnalysis = ImageAnalysis.Builder()
@@ -102,7 +140,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             ContextCompat.getMainExecutor(this),
             ImageAnalysis.Analyzer { imageProxy ->
 
-                if (isStartCodec){
+                if (isStartCodec) {
                     val width = imageProxy.width
                     val height = imageProxy.height
                     val format = imageProxy.format
@@ -153,7 +191,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
                         remainingV
                     )
 
-                    hardEncodeUtils.setData(yuvToNV21)
+                    mHardEncodeUtils.setData(yuvToNV21)
 
 //                    val nv21ToBitmap = nV21ToBitmap.nv21ToBitmap(yuvToNV21, width, height)
 //                    viewBinding.mImageView.setImageBitmap(nv21ToBitmap)
